@@ -30,6 +30,7 @@ set(CORE_SOURCES
     src/core/RadioConnection.cpp
     src/core/CommandParser.cpp
     src/core/AudioEngine.cpp
+    src/core/PanadapterStream.cpp
 )
 
 set(MODEL_SOURCES

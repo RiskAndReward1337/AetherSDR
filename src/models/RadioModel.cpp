@@ -65,6 +65,11 @@ void RadioModel::onConnected()
     // Identify this client to the radio (cosmetic; error is non-fatal).
     m_connection.sendCommand("client program AetherSDR");
 
+    // Start the VITA-49 UDP listener and register our port with the radio.
+    // "client set udpport" must come after "client gui".
+    if (!m_panStream.isRunning())
+        m_panStream.start(&m_connection);
+
     // Request the current slice list.
     // SmartConnect mode: body = "0 1 2 3" — request each slice's state.
     // Standalone mode:   body = ""        — no slices exist, create one.
@@ -100,6 +105,7 @@ void RadioModel::onConnected()
 void RadioModel::onDisconnected()
 {
     qDebug() << "RadioModel: disconnected";
+    m_panStream.stop();
     emit connectionStateChanged(false);
 }
 
@@ -146,7 +152,12 @@ void RadioModel::onStatusReceived(const QString& object,
         return;
     }
 
-    // Panadapter / display objects are handled by PanadapterStream (future).
+    // "display pan 0x40000000 center=14.1 bandwidth=0.2 ..."
+    if (object.startsWith("display pan")) {
+        handlePanadapterStatus(kvs);
+        return;
+    }
+
     // Interlock, ATU, EQ, WAN, transmit etc. are informational — ignore for now.
 }
 
@@ -200,6 +211,28 @@ void RadioModel::handleMeterStatus(const QMap<QString, QString>& kvs)
     if (kvs.contains("patemp"))
         m_paTemp = kvs["patemp"].toFloat();
     emit metersChanged();
+}
+
+void RadioModel::handlePanadapterStatus(const QMap<QString, QString>& kvs)
+{
+    bool changed = false;
+    double center = m_panCenterMhz;
+    double bw     = m_panBandwidthMhz;
+
+    if (kvs.contains("center")) {
+        center = kvs["center"].toDouble();
+        changed = true;
+    }
+    if (kvs.contains("bandwidth")) {
+        bw = kvs["bandwidth"].toDouble();
+        changed = true;
+    }
+
+    if (changed) {
+        m_panCenterMhz    = center;
+        m_panBandwidthMhz = bw;
+        emit panadapterInfoChanged(center, bw);
+    }
 }
 
 // ─── Standalone mode: create panadapter + slice ───────────────────────────────

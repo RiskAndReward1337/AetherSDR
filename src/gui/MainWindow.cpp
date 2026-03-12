@@ -62,6 +62,12 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&m_radioModel, &RadioModel::sliceRemoved,
             this, &MainWindow::onSliceRemoved);
 
+    // ── Panadapter stream → spectrum widget ───────────────────────────────
+    connect(m_radioModel.panStream(), &PanadapterStream::spectrumReady,
+            m_spectrum, &SpectrumWidget::updateSpectrum);
+    connect(&m_radioModel, &RadioModel::panadapterInfoChanged,
+            m_spectrum, &SpectrumWidget::setFrequencyRange);
+
     // ── Audio level meter ──────────────────────────────────────────────────
     connect(&m_audio, &AudioEngine::levelChanged,
             this, &MainWindow::onAudioLevel);
