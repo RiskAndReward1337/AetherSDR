@@ -148,6 +148,9 @@ void PanadapterStream::processDatagram(const QByteArray& data)
     case PCC_WATERFALL:
         decodeWaterfallTile(raw, data.size(), hasTrailer);
         return;
+    case PCC_METER:
+        decodeMeterData(raw, data.size(), hasTrailer);
+        return;
     default:
         break;
     }
@@ -309,6 +312,35 @@ void PanadapterStream::decodeReducedBwAudio(const uchar* raw, int totalBytes, bo
     }
 
     emit audioDataReady(pcm);
+}
+
+// ─── Meter data decode ───────────────────────────────────────────────────────
+//
+// VITA-49 meter packet (PCC 0x8002): payload is N × 4-byte pairs:
+//   uint16 meter_id  (big-endian)
+//   int16  raw_value (big-endian)
+//
+// Raw values are converted by MeterModel based on the meter's unit type.
+// Reference: FlexLib VitaMeterPacket.cs
+
+void PanadapterStream::decodeMeterData(const uchar* raw, int totalBytes, bool hasTrailer)
+{
+    const int payloadStart = VITA49_HEADER_BYTES;
+    const int payloadBytes = totalBytes - payloadStart - (hasTrailer ? 4 : 0);
+    if (payloadBytes < 4) return;
+
+    const int numMeters = payloadBytes / 4;
+    const uchar* payload = raw + payloadStart;
+
+    QVector<quint16> ids(numMeters);
+    QVector<qint16>  vals(numMeters);
+
+    for (int i = 0; i < numMeters; ++i) {
+        ids[i]  = qFromBigEndian<quint16>(payload + i * 4);
+        vals[i] = qFromBigEndian<qint16>(payload + i * 4 + 2);
+    }
+
+    emit meterDataReady(ids, vals);
 }
 
 } // namespace AetherSDR

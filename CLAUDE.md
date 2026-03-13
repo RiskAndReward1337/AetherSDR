@@ -30,7 +30,7 @@ cmake --build build -j$(nproc)
 
 Dependencies (Arch): `qt6-base qt6-multimedia cmake ninja pkgconf`
 
-Current version: **0.1.4** (set in both `CMakeLists.txt` and `README.md`).
+Current version: **0.1.5** (set in both `CMakeLists.txt` and `README.md`).
 
 ---
 
@@ -47,13 +47,15 @@ src/
 │   └── AudioEngine         — QAudioSink push-fed by PanadapterStream (RX); TX stub
 ├── models/
 │   ├── RadioModel          — Central state: owns connection, slices, panadapter config
-│   └── SliceModel          — Per-slice state (freq, mode, filter, DSP, RIT/XIT, etc.)
+│   ├── SliceModel          — Per-slice state (freq, mode, filter, DSP, RIT/XIT, etc.)
+│   └── MeterModel          — Meter definition registry + VITA-49 value conversion
 └── gui/
     ├── MainWindow          — Dark-themed QMainWindow, wires everything together
     ├── ConnectionPanel     — Radio list + connect/disconnect button
     ├── FrequencyDial       — Custom 9-digit MHz display with click/scroll/keyboard tuning
     ├── SpectrumWidget      — FFT spectrum + scrolling waterfall + frequency scale
-    ├── AppletPanel         — Toggle-button column of applet panels (RX, TX stubs, etc.)
+    ├── AppletPanel         — Toggle-button column of applet panels (ANLG, RX, TX stubs, etc.)
+    ├── SMeterWidget        — Analog S-Meter gauge with peak hold (toggled by ANLG button)
     └── RxApplet            — Full RX controls: antenna, filter, AGC, AF gain, pan, DSP, RIT/XIT
 ```
 
@@ -65,6 +67,7 @@ TCP (4992)        →  RadioConnection →  RadioModel → SliceModel → GUI
 UDP VITA-49 (4991)→  PanadapterStream
                        ├── PCC 0x8003 (FFT bins)      → SpectrumWidget.updateSpectrum()
                        ├── PCC 0x8004 (waterfall tiles)→ SpectrumWidget.updateWaterfallRow()
+                       ├── PCC 0x8002 (meter data)     → MeterModel.updateValues()
                        ├── PCC 0x03E3 (audio float32)  → AudioEngine.feedAudioData()
                        └── PCC 0x0123 (audio int16)    → AudioEngine.feedAudioData()
 ```
@@ -127,7 +130,7 @@ Words 0–6 of the VITA-49 header. Key field: **PCC** in lower 16 bits of word 3
 | `0x8004` | Waterfall tiles | 36-byte sub-header + uint16 bins |
 | `0x03E3` | RX audio (uncompressed) | float32 stereo, big-endian |
 | `0x0123` | DAX audio (reduced BW) | int16 mono, big-endian |
-| `0x8002` | Meter data | (not yet decoded) |
+| `0x8002` | Meter data | N × (uint16 meter_id, int16 raw_value), big-endian |
 
 ### FFT Bin Conversion
 
@@ -176,6 +179,25 @@ The waterfall colour range is calibrated to [104, 120] by default and is
   scale to int16 for QAudioSink (24 kHz stereo)
 - PCC 0x0123: big-endian int16 mono → byte-swap, duplicate to stereo
 
+### Meter Data Payload (PCC 0x8002)
+
+Payload is N × 4-byte pairs: `(uint16 meter_id, int16 raw_value)`, big-endian.
+Value conversion depends on unit type (from FlexLib Meter.cs):
+
+| Unit | Conversion |
+|------|-----------|
+| dBm, dB, dBFS, SWR | `raw / 128.0f` |
+| Volts, Amps | `raw / 1024.0f` (v1.4.0.0) |
+| degF, degC | `raw / 64.0f` |
+
+### Meter Status (TCP)
+
+Meter definitions arrive via TCP status messages with `#` as KV separator
+(NOT spaces like other status objects). Format:
+`S<handle>|meter 7.src=SLC#7.num=0#7.nam=LEVEL#7.unit=dBm#7.low=-150.0#7.hi=20.0`
+
+The S-Meter is the "LEVEL" meter from source "SLC" (slice).
+
 ### Stream IDs (observed)
 
 - `0x40000000` — panadapter FFT (same as pan object ID)
@@ -197,7 +219,8 @@ Three-pane horizontal splitter:
 1. **ConnectionPanel** (left) — radio list, connect/disconnect
 2. **Center** — SpectrumWidget (top: FFT 40%, bottom: waterfall 60%, frequency
    scale bar 20px), FrequencyDial below, mode selector, TX button, volume controls
-3. **AppletPanel** (right, 260px fixed) — toggle-button column for RX/TX/etc. applets
+3. **AppletPanel** (right, 260px fixed) — toggle-button row (ANLG, RX, TX, PHNE, P/CW, EQ),
+   S-Meter gauge (toggled by ANLG), scrollable applet stack below
 
 ### SpectrumWidget
 
@@ -215,6 +238,16 @@ Three-pane horizontal splitter:
 - Scroll wheel elsewhere tunes by step size
 - Double-click for direct text entry
 - Range: 0.001–54.0 MHz
+
+### SMeterWidget (ANLG applet)
+
+- Analog gauge: 180° arc, S0 (left) to S9+60 (right)
+- S0–S9 white markings (6 dB per S-unit), S9+10/+20/+40/+60 red markings
+- Needle with shadow, center dot, exponential smoothing (α=0.3)
+- Peak hold marker (orange triangle) with decay (0.5 dB/50ms) and 10s hard reset
+- Text readouts: S-units (top-left, cyan), source label (top-center), dBm (top-right)
+- Scale mapping: S0–S9 occupies left 60% of arc, S9–S9+60 occupies right 40%
+- Toggled by ANLG button (visible by default)
 
 ### RxApplet Controls
 
@@ -261,19 +294,22 @@ them with `slice get <id>` rather than creating new ones.
 
 ---
 
-## What's Implemented (v0.1.4)
+## What's Implemented (v0.1.5)
 
 - UDP radio discovery and TCP command/control
 - SmartSDR V/H/R/S/M protocol parsing
 - Panadapter VITA-49 FFT spectrum display with dBm calibration
 - Native VITA-49 waterfall tiles (PCC 0x8004) with colour mapping
+- VITA-49 meter data decode (PCC 0x8002) with unit-aware conversion
+- MeterModel: meter definition registry from TCP `#`-separated status messages
+- Analog S-Meter gauge (ANLG applet): needle, peak hold, S-unit + dBm readout
 - Audio RX (float32 stereo + int16 mono) via VITA-49 → QAudioSink
 - Volume / mute control with RMS level meter
 - Full RX applet: antennas, filter presets, AGC, AF gain, pan, squelch,
   NB/NR/ANF, RIT/XIT, tuning step stepper, tune lock
 - Frequency dial: click, scroll, keyboard, direct entry
 - Spectrum: click-to-tune, scroll-to-tune, filter passband overlay
-- AppletPanel: toggle-button column for independent applet visibility
+- AppletPanel: toggle-button row (ANLG, RX, TX, PHNE, P/CW, EQ)
 - TX button (sends `xmit 1` / `xmit 0`)
 - Persistent window geometry
 
@@ -285,7 +321,7 @@ them with `slice get <id>` rather than creating new ones.
 - Band stacking / band map
 - CW keyer / memories
 - Equalizer (EQ applet)
-- Full meter display (SWR, ALC, power, etc.)
+- Full meter display (SWR, ALC, power, etc. — MeterModel has the data)
 - DAX / CAT interface
 - Spot / DX cluster integration
 - Memory channels

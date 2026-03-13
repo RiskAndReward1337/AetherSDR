@@ -10,6 +10,8 @@ RadioModel::RadioModel(QObject* parent)
 {
     connect(&m_connection, &RadioConnection::statusReceived,
             this, &RadioModel::onStatusReceived);
+    connect(&m_connection, &RadioConnection::messageReceived,
+            this, &RadioModel::onMessageReceived);
     connect(&m_connection, &RadioConnection::connected,
             this, &RadioModel::onConnected);
     connect(&m_connection, &RadioConnection::disconnected,
@@ -18,6 +20,10 @@ RadioModel::RadioModel(QObject* parent)
             this, &RadioModel::onConnectionError);
     connect(&m_connection, &RadioConnection::versionReceived,
             this, &RadioModel::onVersionReceived);
+
+    // Forward VITA-49 meter packets to MeterModel
+    connect(&m_panStream, &PanadapterStream::meterDataReady,
+            &m_meterModel, &MeterModel::updateValues);
 
     m_reconnectTimer.setSingleShot(true);
     m_reconnectTimer.setInterval(3000);
@@ -177,13 +183,32 @@ void RadioModel::onVersionReceived(const QString& v)
     emit infoChanged();
 }
 
+// ─── Raw message handler (for meter status with '#' separators) ──────────────
+
+void RadioModel::onMessageReceived(const ParsedMessage& msg)
+{
+    // Meter status uses '#' as KV separator (not spaces), so the normal
+    // parseKVs() in CommandParser doesn't handle it.  We intercept the raw
+    // status line here and parse it ourselves.
+    if (msg.type != MessageType::Status) return;
+
+    // Raw line: "S<handle>|meter 7.src=SLC#7.num=0#7.nam=LEVEL#..."
+    const QString& raw = msg.raw;
+    const int pipe = raw.indexOf('|');
+    if (pipe < 0) return;
+    const QString body = raw.mid(pipe + 1);
+    if (!body.startsWith("meter ")) return;
+
+    handleMeterStatus(body.mid(6));  // skip "meter "
+}
+
 // ─── Status dispatch ──────────────────────────────────────────────────────────
 //
 // Object strings look like:
 //   "radio"           → global radio properties
 //   "slice 0"         → slice receiver
 //   "panadapter 0"    → panadapter (spectrum)
-//   "meter 1"         → meter reading
+//   "meter 1"         → meter reading (handled by onMessageReceived)
 //   "removed=True"    → object was removed
 
 void RadioModel::onStatusReceived(const QString& object,
@@ -202,10 +227,7 @@ void RadioModel::onStatusReceived(const QString& object,
         return;
     }
 
-    if (object.startsWith("meter")) {
-        handleMeterStatus(kvs);
-        return;
-    }
+    // Meter status uses '#'-separated tokens and is handled by onMessageReceived().
 
     // "display pan 0x40000000 center=14.1 bandwidth=0.2 ..."
     static const QRegularExpression panRe(R"(^display pan\s+(0x[0-9A-Fa-f]+)$)");
@@ -276,15 +298,58 @@ void RadioModel::handleSliceStatus(int id,
     }
 }
 
-void RadioModel::handleMeterStatus(const QMap<QString, QString>& kvs)
+void RadioModel::handleMeterStatus(const QString& rawBody)
 {
-    // Meter format: "1.num=100 1.nam=FWDPWR 1.low=-150.0 1.hi=20.0 1.desc=Forward Power"
-    // In practice the radio sends meter readings as "num" with a float value.
-    if (kvs.contains("fwdpwr"))
-        m_txPower = kvs["fwdpwr"].toFloat();
-    if (kvs.contains("patemp"))
-        m_paTemp = kvs["patemp"].toFloat();
-    emit metersChanged();
+    // Meter status body format (from FlexLib Radio.cs ParseMeterStatus):
+    //   Tokens separated by '#', each token is "index.key=value".
+    //   Example: "7.src=SLC#7.num=0#7.nam=LEVEL#7.unit=dBm#7.low=-150.0#7.hi=20.0"
+    //
+    // Removal format: "7 removed"
+
+    if (rawBody.contains("removed")) {
+        const QStringList words = rawBody.split(' ', Qt::SkipEmptyParts);
+        if (words.size() >= 1) {
+            bool ok = false;
+            const int idx = words[0].toInt(&ok);
+            if (ok) m_meterModel.removeMeter(idx);
+        }
+        return;
+    }
+
+    // Group tokens by meter index
+    QMap<int, QMap<QString, QString>> grouped;
+    const QStringList tokens = rawBody.split('#', Qt::SkipEmptyParts);
+
+    for (const QString& token : tokens) {
+        const int dot = token.indexOf('.');
+        if (dot < 0) continue;
+        const int eq = token.indexOf('=', dot);
+        if (eq < 0) continue;
+
+        bool ok = false;
+        const int idx = token.left(dot).toInt(&ok);
+        if (!ok) continue;
+
+        const QString key   = token.mid(dot + 1, eq - dot - 1);
+        const QString value = token.mid(eq + 1);
+        grouped[idx][key] = value;
+    }
+
+    for (auto it = grouped.constBegin(); it != grouped.constEnd(); ++it) {
+        const auto& fields = it.value();
+
+        MeterDef def;
+        def.index = it.key();
+        if (fields.contains("src"))  def.source      = fields["src"];
+        if (fields.contains("num"))  def.sourceIndex  = fields["num"].toInt();
+        if (fields.contains("nam"))  def.name         = fields["nam"];
+        if (fields.contains("unit")) def.unit         = fields["unit"];
+        if (fields.contains("low"))  def.low          = fields["low"].toDouble();
+        if (fields.contains("hi"))   def.high         = fields["hi"].toDouble();
+        if (fields.contains("desc")) def.description  = fields["desc"];
+
+        m_meterModel.defineMeter(def);
+    }
 }
 
 void RadioModel::handlePanadapterStatus(const QMap<QString, QString>& kvs)

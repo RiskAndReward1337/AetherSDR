@@ -18,7 +18,6 @@ class FrequencyDial;
 class ConnectionPanel;
 class SpectrumWidget;
 class AppletPanel;
-
 class MainWindow : public QMainWindow {
     Q_OBJECT
 

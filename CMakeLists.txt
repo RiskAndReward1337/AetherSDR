@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AetherSDR VERSION 0.1.4 LANGUAGES CXX)
+project(AetherSDR VERSION 0.1.5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,6 +36,7 @@ set(CORE_SOURCES
 set(MODEL_SOURCES
     src/models/RadioModel.cpp
     src/models/SliceModel.cpp
+    src/models/MeterModel.cpp
 )
 
 set(GUI_SOURCES
@@ -45,6 +46,7 @@ set(GUI_SOURCES
     src/gui/SpectrumWidget.cpp
     src/gui/AppletPanel.cpp
     src/gui/RxApplet.cpp
+    src/gui/SMeterWidget.cpp
 )
 
 set(ALL_SOURCES

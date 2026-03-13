@@ -14,6 +14,7 @@ class RadioConnection;
 //   • PCC 0x0123 → narrow audio reduced-BW, int16 mono BE   → audioDataReady()
 //   • PCC 0x8003 → panadapter FFT bins                      → spectrumReady()
 //   • PCC 0x8004 → waterfall tiles (Width×Height uint16)    → waterfallRowReady()
+//   • PCC 0x8002 → meter data (id/value pairs)             → meterDataReady()
 //   • everything else → silently dropped
 //
 // All packets from the radio use ExtDataWithStream (VITA-49 type 3), not IFDataWithStream.
@@ -51,6 +52,8 @@ signals:
     // Raw PCM payload (header stripped) from IF-Data (audio) VITA-49 packets.
     // Format: 16-bit signed, stereo, 24 kHz, little-endian.
     void audioDataReady(const QByteArray& pcm);
+    // Meter data: parallel arrays of (meter_index, raw_int16_value).
+    void meterDataReady(const QVector<quint16>& ids, const QVector<qint16>& vals);
 
 private slots:
     void onDatagramReady();
@@ -61,12 +64,14 @@ private:
     void decodeWaterfallTile(const uchar* raw, int totalBytes, bool hasTrailer);
     void decodeNarrowAudio(const uchar* raw, int totalBytes, bool hasTrailer);
     void decodeReducedBwAudio(const uchar* raw, int totalBytes, bool hasTrailer);
+    void decodeMeterData(const uchar* raw, int totalBytes, bool hasTrailer);
 
     // PacketClassCodes (from FlexLib VitaFlex.cs)
     static constexpr quint16 PCC_IF_NARROW         = 0x03E3u; // float32 stereo, big-endian
     static constexpr quint16 PCC_IF_NARROW_REDUCED = 0x0123u; // int16 mono, big-endian
     static constexpr quint16 PCC_FFT               = 0x8003u; // panadapter FFT bins
     static constexpr quint16 PCC_WATERFALL         = 0x8004u; // waterfall tiles
+    static constexpr quint16 PCC_METER             = 0x8002u; // meter data
 
     // Frame assembly: a VITA-49 FFT frame may arrive in multiple UDP packets.
     // Each packet carries start_bin_index + num_bins so we can stitch them.

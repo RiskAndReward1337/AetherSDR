@@ -3,6 +3,7 @@
 #include "core/RadioConnection.h"
 #include "core/PanadapterStream.h"
 #include "SliceModel.h"
+#include "MeterModel.h"
 
 #include <QObject>
 #include <QString>
@@ -31,6 +32,7 @@ public:
     // Access the underlying connection and panadapter stream
     RadioConnection*  connection()  { return &m_connection; }
     PanadapterStream* panStream()   { return &m_panStream; }
+    MeterModel*       meterModel()  { return &m_meterModel; }
 
     // Getters
     QString name()    const { return m_name; }
@@ -65,6 +67,7 @@ signals:
 
 private slots:
     void onStatusReceived(const QString& object, const QMap<QString, QString>& kvs);
+    void onMessageReceived(const ParsedMessage& msg);
     void onConnected();
     void onDisconnected();
     void onConnectionError(const QString& msg);
@@ -73,7 +76,7 @@ private slots:
 private:
     void handleRadioStatus(const QMap<QString, QString>& kvs);
     void handleSliceStatus(int id, const QMap<QString, QString>& kvs, bool removed);
-    void handleMeterStatus(const QMap<QString, QString>& kvs);
+    void handleMeterStatus(const QString& rawBody);
     void handlePanadapterStatus(const QMap<QString, QString>& kvs);
 
     void configurePan();
@@ -86,6 +89,7 @@ private:
 
     RadioConnection  m_connection;
     PanadapterStream m_panStream;
+    MeterModel       m_meterModel;
 
     QString     m_name;
     QString     m_model;

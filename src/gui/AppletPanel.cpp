@@ -1,5 +1,6 @@
 #include "AppletPanel.h"
 #include "RxApplet.h"
+#include "SMeterWidget.h"
 
 #include <QPushButton>
 #include <QScrollArea>
@@ -10,12 +11,28 @@
 
 namespace AetherSDR {
 
+// ── Common gradient title bar (matches SmartSDR style) ──────────────────────
+
+static QWidget* appletTitleBar(const QString& text)
+{
+    auto* bar = new QWidget;
+    bar->setFixedHeight(16);
+    bar->setStyleSheet(
+        "QWidget { background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
+        "stop:0 #3a4a5a, stop:0.5 #2a3a4a, stop:1 #1a2a38); "
+        "border-bottom: 1px solid #0a1a28; }");
+
+    auto* lbl = new QLabel(text, bar);
+    lbl->setStyleSheet("QLabel { background: transparent; color: #8aa8c0; "
+                       "font-size: 10px; font-weight: bold; }");
+    lbl->setGeometry(6, 1, 200, 14);
+    return bar;
+}
+
 // ── Placeholder applet widget ────────────────────────────────────────────────
 
 static QWidget* makePlaceholder(const QString& name)
 {
-    // Each placeholder has the same gradient title bar style as RxApplet
-    // so it integrates visually when revealed.
     auto* w = new QWidget;
     w->hide();
 
@@ -23,18 +40,7 @@ static QWidget* makePlaceholder(const QString& name)
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
 
-    // Title bar
-    auto* bar = new QWidget;
-    bar->setFixedHeight(16);
-    bar->setStyleSheet(
-        "QWidget { background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
-        "stop:0 #3a4a5a, stop:0.5 #2a3a4a, stop:1 #1a2a38); "
-        "border-bottom: 1px solid #0a1a28; }");
-    auto* lbl = new QLabel(name, bar);
-    lbl->setStyleSheet("QLabel { background: transparent; color: #8aa8c0; "
-                       "font-size: 10px; font-weight: bold; }");
-    lbl->setGeometry(6, 1, 200, 14);
-    outer->addWidget(bar);
+    outer->addWidget(appletTitleBar(name));
 
     // Body
     auto* body = new QWidget;
@@ -59,7 +65,7 @@ AppletPanel::AppletPanel(QWidget* parent) : QWidget(parent)
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Toggle button row ─────────────────────────────────────────────────────
+    // ── Toggle button row (always at the very top) ───────────────────────────
     auto* btnRow = new QWidget;
     btnRow->setStyleSheet(
         "QWidget { background: #0a0a18; border-bottom: 1px solid #1e2e3e; }"
@@ -72,7 +78,17 @@ AppletPanel::AppletPanel(QWidget* parent) : QWidget(parent)
     btnLayout->setSpacing(2);
     root->addWidget(btnRow);
 
-    // ── Scrollable applet stack ───────────────────────────────────────────────
+    // ── S-Meter section (with title bar, toggled by ANLG button) ─────────────
+    m_sMeterSection = new QWidget;
+    auto* sMeterLayout = new QVBoxLayout(m_sMeterSection);
+    sMeterLayout->setContentsMargins(0, 0, 0, 0);
+    sMeterLayout->setSpacing(0);
+    sMeterLayout->addWidget(appletTitleBar("S-Meter"));
+    m_sMeter = new SMeterWidget(m_sMeterSection);
+    sMeterLayout->addWidget(m_sMeter);
+    root->addWidget(m_sMeterSection);
+
+    // ── Scrollable applet stack ──────────────────────────────────────────────
     auto* scrollArea = new QScrollArea;
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -86,7 +102,7 @@ AppletPanel::AppletPanel(QWidget* parent) : QWidget(parent)
     scrollArea->setWidget(container);
     root->addWidget(scrollArea, 1);
 
-    // ── Helper: add one applet with its toggle button ─────────────────────────
+    // ── Helper: add one applet with its toggle button ────────────────────────
     auto addApplet = [&](const QString& label, QWidget* applet) {
         auto* btn = new QPushButton(label, btnRow);
         btn->setCheckable(true);
@@ -98,20 +114,26 @@ AppletPanel::AppletPanel(QWidget* parent) : QWidget(parent)
         connect(btn, &QPushButton::toggled, applet, &QWidget::setVisible);
     };
 
+    // ANLG button — toggles the S-Meter section (visible by default)
+    {
+        auto* anlgBtn = new QPushButton("ANLG", btnRow);
+        anlgBtn->setCheckable(true);
+        anlgBtn->setChecked(true);
+        btnLayout->addWidget(anlgBtn);
+        connect(anlgBtn, &QPushButton::toggled, m_sMeterSection, &QWidget::setVisible);
+    }
+
     // RX applet — visible by default
     m_rxApplet = new RxApplet;
     addApplet("RX", m_rxApplet);
-    btnLayout->itemAt(0)->widget()->setProperty("checked", true);  // visual only
-    // Actually check the button properly:
-    static_cast<QPushButton*>(btnLayout->itemAt(0)->widget())->setChecked(true);
+    static_cast<QPushButton*>(btnLayout->itemAt(1)->widget())->setChecked(true);
     m_rxApplet->show();
 
     // Placeholder applets — hidden by default
     addApplet("TX",   makePlaceholder("TX"));
-    addApplet("P/CW", makePlaceholder("P/CW"));
     addApplet("PHNE", makePlaceholder("PHNE"));
+    addApplet("P/CW", makePlaceholder("P/CW"));
     addApplet("EQ",   makePlaceholder("EQ"));
-    addApplet("ANLG", makePlaceholder("ANLG"));
 
     btnLayout->addStretch();
 }

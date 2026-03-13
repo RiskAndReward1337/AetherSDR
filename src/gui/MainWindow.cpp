@@ -4,7 +4,9 @@
 #include "SpectrumWidget.h"
 #include "AppletPanel.h"
 #include "RxApplet.h"
+#include "SMeterWidget.h"
 #include "models/SliceModel.h"
+#include "models/MeterModel.h"
 
 #include <QApplication>
 #include <QVBoxLayout>
@@ -103,6 +105,10 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&m_radioModel, &RadioModel::antListChanged,
             m_appletPanel, &AppletPanel::setAntennaList);
 
+    // ── S-Meter: MeterModel → SMeterWidget ────────────────────────────────
+    connect(m_radioModel.meterModel(), &MeterModel::sLevelChanged,
+            m_appletPanel->sMeterWidget(), &SMeterWidget::setLevel);
+
     // ── Audio level meter ──────────────────────────────────────────────────
     connect(&m_audio, &AudioEngine::levelChanged,
             this, &MainWindow::onAudioLevel);
@@ -173,7 +179,7 @@ void MainWindow::buildUI()
     splitter->addWidget(rightWidget);
     splitter->setStretchFactor(1, 1);
 
-    // Right — applet panel
+    // Right — applet panel (includes S-Meter)
     m_appletPanel = new AppletPanel(splitter);
     splitter->addWidget(m_appletPanel);
     splitter->setStretchFactor(2, 0);

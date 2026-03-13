@@ -3,7 +3,7 @@
 A Linux-native SmartSDR-compatible client for FlexRadio Systems transceivers,
 built with **Qt6** and **C++20**.
 
-Current version: **0.1.4**
+Current version: **0.1.5**
 
 ---
 
@@ -35,7 +35,9 @@ Current version: **0.1.4**
 | Freq dial — hover-column scroll-wheel tuning (per-digit) | ✅ |
 | Spectrum — click-to-tune snaps to step size | ✅ |
 | Spectrum — scroll-wheel tunes by step size | ✅ |
-| AppletPanel — toggle-button column (multiple applets visible simultaneously) | ✅ |
+| AppletPanel — toggle-button row (ANLG, RX, TX, PHNE, P/CW, EQ) | ✅ |
+| VITA-49 meter decode (PCC 0x8002) + MeterModel registry | ✅ |
+| Analog S-Meter gauge (ANLG applet) with peak hold | ✅ |
 | Audio TX (microphone → radio) | ⚠️ stub |
 | Volume / mute control | ✅ |
 | TX button | ✅ |
@@ -56,12 +58,16 @@ src/
 │   └── AudioEngine.h/.cpp       # Qt Multimedia audio sink (push-fed by PanadapterStream)
 ├── models/
 │   ├── RadioModel.h/.cpp        # Central radio state, owns connection
-│   └── SliceModel.h/.cpp        # Per-slice receiver state
+│   ├── SliceModel.h/.cpp        # Per-slice receiver state
+│   └── MeterModel.h/.cpp        # Meter definition registry + value conversion
 └── gui/
     ├── MainWindow.h/.cpp        # Main application window
     ├── FrequencyDial.h/.cpp     # Custom 9-digit frequency widget
     ├── ConnectionPanel.h/.cpp   # Radio list + connect/disconnect
-    └── SpectrumWidget.h/.cpp    # Panadapter display (FFT bins)
+    ├── SpectrumWidget.h/.cpp    # Panadapter display (FFT bins)
+    ├── AppletPanel.h/.cpp       # Toggle-button applet container
+    ├── SMeterWidget.h/.cpp      # Analog S-Meter gauge
+    └── RxApplet.h/.cpp          # Full RX controls applet
 ```
 
 ### Data flow
@@ -81,6 +87,8 @@ src/
  ──────────────────▶  PanadapterStream   │──────────────────────────▶ SpectrumWidget
   (port 4991)      │  routes by PCC      │   waterfall  (PCC 0x8004)      ↑
                    │                     │──────────────────────────────────┘
+                   │                     │   meter data (PCC 0x8002)
+                   │                     │──────────────────────────▶ MeterModel ──▶ SMeterWidget
                    │                     │   audio PCM  (PCC 0x03E3)
                    └─────────────────────┘──────────────────────────▶ AudioEngine
                                                                            │
@@ -176,7 +184,7 @@ TCP connect to radio:4992
   - `0x0123` — DAX audio reduced-BW (int16 mono, big-endian)
   - `0x8003` — panadapter FFT bins (uint16, big-endian)
   - `0x8004` — waterfall tiles (36-byte sub-header + Width×Height uint16 bins)
-  - `0x8002` — meter data
+  - `0x8002` — meter data (N × uint16 id + int16 raw_value)
 - **Waterfall tile bins** are **unsigned uint16** (big-endian), interpreted as signed
   `int16` and divided by 128 to get an arbitrary intensity scale (not dBm directly).
   Observed noise floor ~96–106, signal peaks ~110–115.  Colour-mapped client-side
@@ -205,6 +213,18 @@ model-driven dial updates back to the radio.
 ---
 
 ## Changelog
+
+### v0.1.5
+- VITA-49 meter data decode (PCC 0x8002): N × (uint16 meter_id, int16 raw_value)
+  pairs with unit-aware conversion (dBm/128, Volts/1024, degF/64)
+- MeterModel: meter definition registry from TCP status messages (parses
+  `#`-separated `index.key=value` tokens from FlexLib-format meter status)
+- Analog S-Meter gauge widget (SMeterWidget): 180° arc with S0–S9 white and
+  S9+10/+20/+40/+60 red markings, smoothed needle, peak hold with decay
+  (0.5 dB/50ms) and 10-second hard reset, S-unit + dBm text readouts
+- AppletPanel: ANLG button toggles S-Meter visibility; button order now
+  ANLG, RX, TX, PHNE, P/CW, EQ; shared gradient title bar across all applets
+- S-Meter wired to MeterModel "LEVEL" meter from slice source (SLC)
 
 ### v0.1.4
 - Waterfall display: decode native VITA-49 waterfall tiles (PCC 0x8004) with
