@@ -249,26 +249,18 @@ void SMeterWidget::paintEvent(QPaintEvent*)
         const float frac = dbmToFraction(m_levelDbm);
         const float angle = fractionToAngle(frac);
 
-        // Compute where the needle should hit the scale (on the arc),
-        // then extend 20px past the arc along the same direction.
-        const float tipR = radius - 30;
+        // Needle extends to the end of the outer (RX) ticks: radius + 14
+        const float tipR = radius + 14;
         const float tipX = cx + tipR * std::cos(angle);
         const float tipY = cy - tipR * std::sin(angle);
 
-        // Direction from needle origin to tip, normalized
-        const float dx = tipX - cx;
-        const float dy = tipY - needleCy;
-        const float len = std::sqrt(dx * dx + dy * dy);
-        const float extX = tipX + 20.0f * dx / len;
-        const float extY = tipY + 20.0f * dy / len;
-
         // Needle shadow
         p.setPen(QPen(QColor(0, 0, 0, 80), 3));
-        p.drawLine(QPointF(cx + 1, needleCy + 1), QPointF(extX + 1, extY + 1));
+        p.drawLine(QPointF(cx + 1, needleCy + 1), QPointF(tipX + 1, tipY + 1));
 
         // Needle
         p.setPen(QPen(QColor(0xff, 0xff, 0xff), 2));
-        p.drawLine(QPointF(cx, needleCy), QPointF(extX, extY));
+        p.drawLine(QPointF(cx, needleCy), QPointF(tipX, tipY));
     }
 
     // ── Draw peak marker (small triangle) ────────────────────────────────
