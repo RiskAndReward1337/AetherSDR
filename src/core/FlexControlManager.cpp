@@ -80,31 +80,33 @@ void FlexControlManager::onReadyRead()
 
 void FlexControlManager::processCommand(const QByteArray& cmd)
 {
-    if (cmd.startsWith('D')) {
-        // Clockwise rotation: D (1 step), D02–D06 (accelerated)
+    const QByteArray upper = cmd.toUpper();
+
+    if (upper.startsWith('D')) {
+        // D = tune down (CCW), D02–D06 = accelerated
         int accel = 1;
-        if (cmd.size() > 1)
-            accel = std::max(1, cmd.mid(1).toInt());
+        if (upper.size() > 1)
+            accel = std::max(1, upper.mid(1).toInt());
         emit tuneSteps(m_invertDirection ? accel : -accel);
 
-    } else if (cmd.startsWith('U')) {
-        // Counter-clockwise rotation: U (1 step), U02–U06 (accelerated)
+    } else if (upper.startsWith('U')) {
+        // U = tune up (CW), U02–U06 = accelerated
         int accel = 1;
-        if (cmd.size() > 1)
-            accel = std::max(1, cmd.mid(1).toInt());
+        if (upper.size() > 1)
+            accel = std::max(1, upper.mid(1).toInt());
         emit tuneSteps(m_invertDirection ? -accel : accel);
 
-    } else if (cmd.startsWith('X') && cmd.size() >= 3) {
+    } else if (upper.startsWith('X') && upper.size() >= 3) {
         // Button press: X<button><action>
         //   button: 1, 2, 3
         //   action: S=tap(0), C=double-tap(1), L=hold(2)
-        int button = cmd.at(1) - '0';
+        int button = upper.at(1) - '0';
         if (button < 1 || button > 3) return;
-        char action = cmd.at(2);
+        char action = upper.at(2);
         int actionId = (action == 'S') ? 0 : (action == 'C') ? 1 : 2;
         emit buttonPressed(button, actionId);
 
-    } else if (cmd.startsWith('F')) {
+    } else if (upper.startsWith('F')) {
         // Init/reset — log and ignore
         qDebug() << "FlexControlManager: device reset" << cmd;
     }

@@ -21,6 +21,7 @@ void SliceModel::setFrequency(double mhz)
     if (m_locked) return;
     if (qFuzzyCompare(m_frequency, mhz)) return;
     m_frequency = mhz;
+    m_lastCommandedMhz = mhz;
     // autopan=0 prevents the radio from recentering the pan (#292).
     // SmartSDR pcap confirms: scroll-wheel uses "slice tune <id> <freq> autopan=0".
     sendCommand(QString("slice tune %1 %2 autopan=0").arg(m_id).arg(mhz, 0, 'f', 6));
@@ -486,7 +487,13 @@ void SliceModel::applyStatus(const QMap<QString, QString>& kvs)
         // qFuzzyCompare fails when either value is 0.0 — use explicit epsilon
         if (std::abs(m_frequency - f) > 1e-9) {
             m_frequency = f;
-            freqChanged = true;
+            // Suppress the display update if this echo is stale — i.e., we've already
+            // commanded a newer frequency and this is an in-flight echo of an older one.
+            // When the echo matches our last command, clear the guard and let it through.
+            if (m_lastCommandedMhz < 0.0 || std::abs(m_lastCommandedMhz - f) < 1e-6) {
+                m_lastCommandedMhz = -1.0;
+                freqChanged = true;
+            }
         }
     }
     if (kvs.contains("mode")) {

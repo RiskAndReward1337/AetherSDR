@@ -12,10 +12,10 @@ namespace AetherSDR {
 //
 // The FlexControl is a USB serial device (VID 0x2192, PID 0x0010) at
 // 9600 8N1 that sends semicolon-delimited ASCII commands:
-//   D;      — rotate CW (tune up 1 step)
-//   D02;–D06; — rotate CW with acceleration (2–6 steps)
-//   U;      — rotate CCW (tune down 1 step)
-//   U02;–U06; — rotate CCW with acceleration
+//   U;      — rotate CW (tune up 1 step)
+//   U02;–U06; — rotate CW with acceleration (2–6 steps)
+//   D;      — rotate CCW (tune down 1 step)
+//   D02;–D06; — rotate CCW with acceleration
 //   X1S;    — button 1 tap (S=tap, C=double, L=hold)
 //   X2S;    — button 2 tap
 //   X3S;    — button 3 tap

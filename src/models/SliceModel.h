@@ -227,6 +227,7 @@ private:
     int     m_id{0};
     QString m_panId;           // panadapter assignment (e.g. "0x40000000")
     double  m_frequency{0.0};
+    double  m_lastCommandedMhz{-1.0}; // set by setFrequency(); used to suppress stale echoes
     QString m_mode{"USB"};
     QStringList m_modeList;
     int     m_filterLow{-1500};

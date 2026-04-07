@@ -1362,22 +1362,23 @@ MainWindow::MainWindow(QWidget* parent)
     m_flexCoalesceTimer.setSingleShot(true);
     m_flexCoalesceTimer.setInterval(20);
     connect(&m_flexCoalesceTimer, &QTimer::timeout, this, [this]() {
-        if (m_flexPendingSteps == 0) return;
+        if (m_flexTargetMhz < 0.0) return;
         auto* s = activeSlice();
-        if (!s || s->isLocked()) { m_flexPendingSteps = 0; return; }
-        int stepHz = spectrum() ? spectrum()->stepSize() : 100;
-        double newMhz = s->frequency() + m_flexPendingSteps * stepHz / 1e6;
-        m_flexPendingSteps = 0;
-        QString panId = m_panStack ? m_panStack->activePanId() : m_radioModel.panId();
-        if (!panId.isEmpty())
-            m_radioModel.sendCommand(
-                QString("slice m %1 pan=%2").arg(newMhz, 0, 'f', 6).arg(panId));
-        if (spectrum()) spectrum()->setVfoFrequency(newMhz);
+        if (!s || s->isLocked()) { m_flexTargetMhz = -1.0; return; }
+        // setFrequency: optimistic update + slice tune autopan=0 + frequencyChanged emit.
+        // Also sets m_lastCommandedMhz so applyStatus suppresses stale in-flight echoes.
+        s->setFrequency(m_flexTargetMhz);
     });
     // FlexControl signals (auto-queued from worker → main)
     connect(m_flexControl, &FlexControlManager::tuneSteps,
             this, [this](int steps) {
-        m_flexPendingSteps += steps;
+        auto* s = activeSlice();
+        if (!s || s->isLocked()) return;
+        int stepHz = spectrum() ? spectrum()->stepSize() : 100;
+        // Re-sync base from radio when uninitialized or after an external QSY (> 1 MHz jump)
+        if (m_flexTargetMhz < 0.0 || qAbs(s->frequency() - m_flexTargetMhz) > 1.0)
+            m_flexTargetMhz = s->frequency();
+        m_flexTargetMhz += steps * stepHz / 1e6;
         if (!m_flexCoalesceTimer.isActive())
             m_flexCoalesceTimer.start();
     });
